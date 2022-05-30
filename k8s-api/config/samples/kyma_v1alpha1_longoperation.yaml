@@ -1,0 +1,6 @@
+apiVersion: kyma.kyma-project.io/v1alpha1
+kind: LongOperation
+metadata:
+  name: longoperation-sample
+spec:
+  # TODO(user): Add fields here

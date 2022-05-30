@@ -1,0 +1,15 @@
+domain: kyma-project.io
+layout:
+- go.kubebuilder.io/v3
+projectName: k8s-api
+repo: github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/k8s-api
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: kyma-project.io
+  group: kyma
+  kind: LongOperation
+  path: github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/k8s-api/api/v1alpha1
+  version: v1alpha1
+version: "3"
