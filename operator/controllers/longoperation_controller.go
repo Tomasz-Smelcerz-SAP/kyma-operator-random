@@ -23,6 +23,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	operatorApi "github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/k8s-api/api/v1alpha1"
 )
 
 // LongOperationReconciler reconciles a LongOperation object
@@ -45,10 +47,9 @@ type LongOperationReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *LongOperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
-
+	logger := log.FromContext(ctx)
 	// TODO(user): your logic here
-
+	logger.Info("Reconciling:", "object", req.String())
 	return ctrl.Result{}, nil
 }
 
@@ -56,6 +57,6 @@ func (r *LongOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 func (r *LongOperationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		// Uncomment the following line adding a pointer to an instance of the controlled resource as an argument
-		// For().
+		For(&operatorApi.LongOperation{}).
 		Complete(r)
 }

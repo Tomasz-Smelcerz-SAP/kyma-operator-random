@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	operatorApi "github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/k8s-api/api/v1alpha1"
 	"github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/operator/controllers"
 	//+kubebuilder:scaffold:imports
 )
@@ -42,6 +43,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(operatorApi.AddToScheme(scheme))
 
 	//+kubebuilder:scaffold:scheme
 }
