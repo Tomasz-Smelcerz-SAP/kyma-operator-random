@@ -18,6 +18,9 @@ package controllers
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -25,12 +28,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	operatorApi "github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/k8s-api/api/v1alpha1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 // LongOperationReconciler reconciles a LongOperation object
 type LongOperationReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	random *rand.Rand
 }
 
 //+kubebuilder:rbac:groups=kyma.kyma-project.io,resources=longoperations,verbs=get;list;watch;create;update;patch;delete
@@ -48,8 +53,60 @@ type LongOperationReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *LongOperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	// TODO(user): your logic here
 	logger.Info("Reconciling:", "object", req.String())
+	obj := operatorApi.LongOperation{}
+	err := r.Get(ctx, client.ObjectKey{Name: req.Name, Namespace: req.Namespace}, &obj)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.Info(req.NamespacedName.String() + " got deleted!")
+		}
+		// we'll ignore not-found errors, since they can't be fixed by an immediate
+		// requeue (we'll need to wait for a new notification), and we can get them
+		// on deleted requests.
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	constantTime := obj.Spec.ConstantProcessingTime
+	randomTime := obj.Spec.RandomProcessingTime
+
+	if constantTime <= 0 && randomTime <= 0 {
+		logger.Info("LongOperation " + req.NamespacedName.String() + " has invalid time configuration")
+		logger.Info(fmt.Sprintf("LongOperation %s has invalid time configuration", req.NamespacedName.String()))
+		obj.Status.State = operatorApi.LongOperationStateError
+		err = r.Status().Update(ctx, &obj)
+		if err != nil {
+			logger.Error(err, fmt.Sprintf("Error during status update of LongOperation %s", req.NamespacedName.String()))
+		}
+		return ctrl.Result{}, nil
+	}
+
+	st := obj.Status.State
+	if st == "" || st == operatorApi.LongOperationStateError {
+		processingTime := r.calcProcessingTime(constantTime, randomTime)
+		logger.Info(fmt.Sprintf("LongOperation %s is processed for %d seconds", req.NamespacedName.String(), processingTime))
+		obj.Status.State = operatorApi.LongOperationStateProcessing
+		err = r.Status().Update(ctx, &obj)
+		if err != nil {
+			logger.Error(err, fmt.Sprintf("Error during status update of LongOperation %s", req.NamespacedName.String()))
+		}
+		return ctrl.Result{RequeueAfter: time.Duration(processingTime) * time.Second}, nil
+	}
+
+	if st == operatorApi.LongOperationStateProcessing {
+		logger.Info(fmt.Sprintf("LongOperation %s finished processing", req.NamespacedName.String()))
+		obj.Status.State = operatorApi.LongOperationStateReady
+		err = r.Status().Update(ctx, &obj)
+		if err != nil {
+			logger.Error(err, fmt.Sprintf("Error during status update of LongOperation %s", req.NamespacedName.String()))
+		}
+		return ctrl.Result{RequeueAfter: time.Second * 60}, nil
+	}
+
+	if st == operatorApi.LongOperationStateReady {
+		logger.Info(fmt.Sprintf("LongOperation %s is already processed, no action taken", req.NamespacedName.String()))
+		return ctrl.Result{}, nil
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -59,4 +116,11 @@ func (r *LongOperationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// Uncomment the following line adding a pointer to an instance of the controlled resource as an argument
 		For(&operatorApi.LongOperation{}).
 		Complete(r)
+}
+
+func (r *LongOperationReconciler) calcProcessingTime(constantTime, randomTime int) int {
+	if randomTime == 0 {
+		return constantTime
+	}
+	return constantTime + r.random.Intn(randomTime+1)
 }
