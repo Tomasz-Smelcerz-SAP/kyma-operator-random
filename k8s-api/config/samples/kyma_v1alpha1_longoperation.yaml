@@ -3,6 +3,6 @@ kind: LongOperation
 metadata:
   name: longoperation-sample
 spec:
-  constantProcessingTime: 10
-  randomProcessingTime: 5
+  constantProcessingTime: 20
+  randomProcessingTime: 10
   bigPayload: "veryLongPayloadHere maybe 10 KiB"
