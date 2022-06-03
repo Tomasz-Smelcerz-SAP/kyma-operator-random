@@ -38,6 +38,8 @@ type LongOperationReconciler struct {
 	RandomGen *rand.Rand
 }
 
+const timeFormat = "2006-01-02T15:04:05.999Z07:00"
+
 //+kubebuilder:rbac:groups=kyma.kyma-project.io,resources=longoperations,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=kyma.kyma-project.io,resources=longoperations/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=kyma.kyma-project.io,resources=longoperations/finalizers,verbs=update
@@ -69,31 +71,49 @@ func (r *LongOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	constantTime := obj.Spec.ConstantProcessingTime
 	randomTime := obj.Spec.RandomProcessingTime
 
-	if constantTime <= 0 && randomTime <= 0 {
-		logger.Info("LongOperation " + req.NamespacedName.String() + " has invalid time configuration")
-		logger.Info(fmt.Sprintf("LongOperation %s has invalid time configuration", req.NamespacedName.String()))
-		obj.Status.State = operatorApi.LongOperationStateError
-		err = r.Status().Update(ctx, &obj)
-		if err != nil {
-			logger.Error(err, fmt.Sprintf("Error during status update of LongOperation %s", req.NamespacedName.String()))
-		}
-		return ctrl.Result{}, nil
-	}
-
 	st := obj.Status.State
-	if st == "" || st == operatorApi.LongOperationStateError {
+	if st == "" {
+		if constantTime <= 0 && randomTime <= 0 {
+			logger.Info(fmt.Sprintf("LongOperation %s has invalid time configuration", req.NamespacedName.String()))
+			obj.Status.State = operatorApi.LongOperationStateError
+			err = r.Status().Update(ctx, &obj)
+			if err != nil {
+				logger.Error(err, fmt.Sprintf("Error during status update of LongOperation %s", req.NamespacedName.String()))
+			}
+			return ctrl.Result{}, nil
+		}
+
 		processingTime := r.calcProcessingTime(constantTime, randomTime)
-		logger.Info(fmt.Sprintf("LongOperation %s is processed for %d seconds", req.NamespacedName.String(), processingTime))
+
+		logger.Info(fmt.Sprintf("LongOperation %s will be processed in %d seconds", req.NamespacedName.String(), processingTime))
+
 		obj.Status.State = operatorApi.LongOperationStateProcessing
+		targetTime := time.Now().Add(time.Duration(processingTime-1) * time.Second)
+		obj.Status.RecheckAfter = targetTime.Format(timeFormat)
 		err = r.Status().Update(ctx, &obj)
 		if err != nil {
 			logger.Error(err, fmt.Sprintf("Error during status update of LongOperation %s", req.NamespacedName.String()))
 		}
+
 		return ctrl.Result{RequeueAfter: time.Duration(processingTime) * time.Second}, nil
 	}
 
 	if st == operatorApi.LongOperationStateProcessing {
-		logger.Info(fmt.Sprintf("LongOperation %s finished processing", req.NamespacedName.String()))
+		if obj.Status.RecheckAfter != "" {
+			targetTime, err := time.Parse(timeFormat, obj.Status.RecheckAfter)
+			if err != nil {
+				logger.Error(err, fmt.Sprintf("Skipping processing of LongOperation %s - error parsing time", req.NamespacedName.String()))
+				return ctrl.Result{}, nil
+			}
+
+			if targetTime.After(time.Now()) {
+				//Skip processing, time has not passed yet
+				logger.Info(fmt.Sprintf("Skipping processing of LongOperation %s - not enough time has passed yet", req.NamespacedName.String()))
+				return ctrl.Result{}, nil
+			}
+		}
+
+		logger.Info(fmt.Sprintf("LongOperation %s has finished processing", req.NamespacedName.String()))
 		obj.Status.State = operatorApi.LongOperationStateReady
 		err = r.Status().Update(ctx, &obj)
 		if err != nil {
@@ -122,5 +142,12 @@ func (r *LongOperationReconciler) calcProcessingTime(constantTime, randomTime in
 	if randomTime == 0 {
 		return constantTime
 	}
-	return constantTime + r.RandomGen.Intn(randomTime+1)
+	res := constantTime + r.RandomGen.Intn(randomTime+1)
+	if res < 1 {
+		res = 1
+	}
+
+	return res
 }
+
+//t.Format("2006-01-02T15:04:05.999Z07:00")
