@@ -3,4 +3,6 @@ kind: LongOperation
 metadata:
   name: longoperation-sample
 spec:
-  # TODO(user): Add fields here
+  constantProcessingTime: 10
+  randomProcessingTime: 5
+  bigPayload: "veryLongPayloadHere maybe 10 KiB"

@@ -27,15 +27,47 @@ import (
 type LongOperationSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+	//Processing time == ConstantProcessingTime + RandomProcessingTime.
+	//To get a constant processing time == X seconds, provide:
+	//ConstantProcessingTime: X
+	//RandomProcessingTime: 0
 
-	// Foo is an example field of LongOperation. Edit longoperation_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	//To get a random processing time in the range [X, Y] seconds, where Y > X, provide:
+	//ConstantProcessingTime: X
+	//RandomProcessingTime: Y - X
+
+	//Constant processing time, in seconds.
+	ConstantProcessingTime int `json:"constantProcessingTime,omitempty"`
+
+	//Random processing time. If greater than zero, the processing time is calculated as a random number of seconds in the range: [0..RandomProcessingTime].
+	RandomProcessingTime int `json:"randomProcessingTime,omitempty"`
+
+	BigPayload string `json:"bigPayload,omitempty"`
 }
+
+// +kubebuilder:validation:Enum=Processing;Deleting;Ready;Error
+type LongOperationState string
+
+// Valid Helm States
+const (
+	// LongOperationStateReady signifies LongOperation is ready
+	LongOperationStateReady LongOperationState = "Ready"
+
+	// LongOperationStateProcessing signifies LongOperation is reconciling
+	LongOperationStateProcessing LongOperationState = "Processing"
+
+	// LongOperationStateError signifies an error for LongOperation
+	LongOperationStateError LongOperationState = "Error"
+
+	// LongOperationStateDeleting signifies LongOperation is being deleted
+	LongOperationStateDeleting LongOperationState = "Deleting"
+)
 
 // LongOperationStatus defines the observed state of LongOperation
 type LongOperationStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+	State LongOperationState `json:"state,omitempty"`
 }
 
 //+kubebuilder:object:root=true
