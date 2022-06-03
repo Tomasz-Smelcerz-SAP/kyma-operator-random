@@ -34,8 +34,8 @@ import (
 // LongOperationReconciler reconciles a LongOperation object
 type LongOperationReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-	random *rand.Rand
+	Scheme    *runtime.Scheme
+	RandomGen *rand.Rand
 }
 
 //+kubebuilder:rbac:groups=kyma.kyma-project.io,resources=longoperations,verbs=get;list;watch;create;update;patch;delete
@@ -122,5 +122,5 @@ func (r *LongOperationReconciler) calcProcessingTime(constantTime, randomTime in
 	if randomTime == 0 {
 		return constantTime
 	}
-	return constantTime + r.random.Intn(randomTime+1)
+	return constantTime + r.RandomGen.Intn(randomTime+1)
 }

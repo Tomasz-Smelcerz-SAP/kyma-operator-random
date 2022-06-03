@@ -3,7 +3,7 @@ module github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/operator
 go 1.17
 
 require (
-	github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/k8s-api v0.0.0-20220603043010-0cd688d135a8
+	github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/k8s-api v0.0.0-20220603053938-d1e4f3483858
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.17.0
 	k8s.io/apimachinery v0.23.0
