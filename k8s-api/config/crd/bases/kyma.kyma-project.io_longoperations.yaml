@@ -48,9 +48,8 @@ spec:
           status:
             description: LongOperationStatus defines the observed state of LongOperation
             properties:
-              observedGeneration:
-                format: int64
-                type: integer
+              recheckAfter:
+                type: string
               state:
                 description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
                   of cluster Important: Run "make" to regenerate code after modifying
