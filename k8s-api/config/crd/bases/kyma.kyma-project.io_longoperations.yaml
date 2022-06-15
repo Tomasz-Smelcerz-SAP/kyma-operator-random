@@ -35,10 +35,6 @@ spec:
           spec:
             description: LongOperationSpec defines the desired state of LongOperation
             properties:
-              badMoodBeginMinute:
-                type: integer
-              badMoodEndMinute:
-                type: integer
               bigPayload:
                 type: string
               constantProcessingTime:
@@ -67,6 +63,8 @@ spec:
                 - Deleting
                 - Ready
                 - Error
+                type: string
+              updated:
                 type: string
             type: object
         type: object
