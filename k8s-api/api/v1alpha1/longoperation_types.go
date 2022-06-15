@@ -42,6 +42,9 @@ type LongOperationSpec struct {
 	//Random processing time. If greater than zero, the processing time is calculated as a random number of seconds in the range: [0..RandomProcessingTime].
 	RandomProcessingTime int `json:"randomProcessingTime,omitempty"`
 
+	BadMoodBeginMinute int `json:"badMoodBeginMinute,omitempty"`
+	BadMoodEndMinute   int `json:"badMoodEndMinute,omitempty"`
+
 	BigPayload string `json:"bigPayload,omitempty"`
 }
 
@@ -69,8 +72,8 @@ type LongOperationStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
 	State              LongOperationState `json:"state,omitempty"`
 	Message            string             `json:"message,omitempty"`
+	BusyUntil          string             `json:"busyUntil,omitempty"`
 	ObservedGeneration int                `json:"observedGeneration,omitempty"`
-	RecheckAfter       string             `json:"recheckAfter,omitempty"`
 }
 
 //+kubebuilder:object:root=true
