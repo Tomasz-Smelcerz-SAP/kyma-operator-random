@@ -48,6 +48,10 @@ spec:
           status:
             description: LongOperationStatus defines the observed state of LongOperation
             properties:
+              config:
+                type: string
+              message:
+                type: string
               recheckAfter:
                 type: string
               state:
