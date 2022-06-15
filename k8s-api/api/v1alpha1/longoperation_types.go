@@ -67,10 +67,10 @@ const (
 type LongOperationStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	State        LongOperationState `json:"state,omitempty"`
-	Message      string             `json:"message,omitempty"`
-	Config       string             `json:"config,omitempty"`
-	RecheckAfter string             `json:"recheckAfter,omitempty"`
+	State              LongOperationState `json:"state,omitempty"`
+	Message            string             `json:"message,omitempty"`
+	ObservedGeneration int                `json:"observedGeneration,omitempty"`
+	RecheckAfter       string             `json:"recheckAfter,omitempty"`
 }
 
 //+kubebuilder:object:root=true
