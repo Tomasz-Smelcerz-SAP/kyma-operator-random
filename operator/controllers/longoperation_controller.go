@@ -18,8 +18,11 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math/big"
 	"math/rand"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -28,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	operatorApi "github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/k8s-api/api/v1alpha1"
+	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
@@ -68,66 +72,130 @@ func (r *LongOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	updateStatusFn, err := r.process(&obj, logger)
+	if err != nil {
+		obj.Status.State = operatorApi.LongOperationStateError
+		obj.Status.Message = err.Error()
+		err = r.Status().Update(ctx, &obj)
+		if err != nil {
+			logger.Error(err, fmt.Sprintf("Error during status update of LongOperation %s", req.NamespacedName.String()))
+		}
+		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+	}
+
+	statusChanged := updateStatusFn(&obj.Status)
+	if obj.Status.ObservedGeneration != int(obj.Generation) {
+		obj.Status.ObservedGeneration = int(obj.Generation)
+		statusChanged = true
+	}
+
+	if statusChanged {
+		obj.Status.Updated = time.Now().Format(timeFormat)
+		err = r.Status().Update(ctx, &obj)
+		if err != nil {
+			logger.Error(err, fmt.Sprintf("Error during status update of LongOperation %s", req.NamespacedName.String()))
+			return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
+		}
+	}
+
+	if obj.Status.State == operatorApi.LongOperationStateProcessing {
+		return ctrl.Result{RequeueAfter: 20 * time.Second}, nil
+	}
+	if obj.Status.State == operatorApi.LongOperationStateReady {
+		return ctrl.Result{RequeueAfter: 300 * time.Second}, nil
+	}
+
+	return ctrl.Result{RequeueAfter: 600 * time.Second}, nil
+
+}
+
+func (r *LongOperationReconciler) verifySpec(obj *operatorApi.LongOperation) error {
 	constantTime := obj.Spec.ConstantProcessingTime
 	randomTime := obj.Spec.RandomProcessingTime
 
-	st := obj.Status.State
-	if st == "" {
-		if constantTime <= 0 && randomTime <= 0 {
-			logger.Info(fmt.Sprintf("LongOperation %s has invalid time configuration", req.NamespacedName.String()))
-			obj.Status.State = operatorApi.LongOperationStateError
-			err = r.Status().Update(ctx, &obj)
+	if constantTime <= 0 && randomTime <= 0 {
+		msg := fmt.Sprintf("LongOperation %s/%s has invalid time configuration", obj.Namespace, obj.Name)
+		return errors.New(msg)
+	}
+
+	return nil
+}
+
+func (r *LongOperationReconciler) compareDesiredStateWithCurrent(obj *operatorApi.LongOperation, logger logr.Logger) (*differences, error) {
+	diffs := differences{}
+
+	now := time.Now()
+
+	if obj.Status.State == "" || obj.Status.BusyUntil == "" {
+		processingTime := r.calcProcessingTime(string(obj.UID), obj.Spec.ConstantProcessingTime, obj.Spec.RandomProcessingTime)
+		busyUntilTime := now.Add(time.Duration(processingTime) * time.Second)
+		diffs.setBusyUntilTo = busyUntilTime.Format(timeFormat)
+		diffs.changeStatusTo = operatorApi.LongOperationStateProcessing
+		diffs.setMessageTo = fmt.Sprintf("Processing time: %d[s]", processingTime)
+	} else {
+		if int64(obj.Status.ObservedGeneration) == obj.Generation {
+
+			//handle reconciliations without Spec change
+			busyUntilTime, err := time.Parse(timeFormat, obj.Status.BusyUntil)
 			if err != nil {
-				logger.Error(err, fmt.Sprintf("Error during status update of LongOperation %s", req.NamespacedName.String()))
-			}
-			return ctrl.Result{}, nil
-		}
-
-		processingTime := r.calcProcessingTime(constantTime, randomTime)
-
-		logger.Info(fmt.Sprintf("LongOperation %s will be processed in %d seconds", req.NamespacedName.String(), processingTime))
-
-		obj.Status.State = operatorApi.LongOperationStateProcessing
-		targetTime := time.Now().Add(time.Duration(processingTime-1) * time.Second)
-		obj.Status.RecheckAfter = targetTime.Format(timeFormat)
-		err = r.Status().Update(ctx, &obj)
-		if err != nil {
-			logger.Error(err, fmt.Sprintf("Error during status update of LongOperation %s", req.NamespacedName.String()))
-		}
-
-		return ctrl.Result{RequeueAfter: time.Duration(processingTime) * time.Second}, nil
-	}
-
-	if st == operatorApi.LongOperationStateProcessing {
-		if obj.Status.RecheckAfter != "" {
-			targetTime, err := time.Parse(timeFormat, obj.Status.RecheckAfter)
-			if err != nil {
-				logger.Error(err, fmt.Sprintf("Skipping processing of LongOperation %s - error parsing time", req.NamespacedName.String()))
-				return ctrl.Result{}, nil
+				msg := fmt.Sprintf("Error for LongOperation %s/%s: cannot parse BusyUntil time: %s", obj.Namespace, obj.Name, obj.Status.BusyUntil)
+				logger.Error(err, msg)
+				return nil, errors.New(msg)
 			}
 
-			if targetTime.After(time.Now()) {
-				//Skip processing, time has not passed yet
-				logger.Info(fmt.Sprintf("Skipping processing of LongOperation %s - not enough time has passed yet", req.NamespacedName.String()))
-				return ctrl.Result{}, nil
+			if now.After(busyUntilTime) {
+				//no longer busy!
+				if obj.Status.State == operatorApi.LongOperationStateReady {
+					diffs.none = true
+				} else {
+					diffs.changeStatusTo = operatorApi.LongOperationStateReady
+				}
+			} else {
+				//still busy...
+				if obj.Status.State == operatorApi.LongOperationStateProcessing {
+					diffs.none = true
+				} else {
+					diffs.changeStatusTo = operatorApi.LongOperationStateProcessing
+				}
 			}
+		} else {
+			//handle reconciliations with a change to Spec
+			processingTime := r.calcProcessingTime(string(obj.UID), obj.Spec.ConstantProcessingTime, obj.Spec.RandomProcessingTime)
+			busyUntilTime := now.Add(time.Duration(processingTime) * time.Second)
+			diffs.setBusyUntilTo = busyUntilTime.Format(timeFormat)
+			diffs.changeStatusTo = operatorApi.LongOperationStateProcessing
+			diffs.setMessageTo = fmt.Sprintf("Processing time: %d[s]", processingTime)
 		}
-
-		logger.Info(fmt.Sprintf("LongOperation %s has finished processing", req.NamespacedName.String()))
-		obj.Status.State = operatorApi.LongOperationStateReady
-		err = r.Status().Update(ctx, &obj)
-		if err != nil {
-			logger.Error(err, fmt.Sprintf("Error during status update of LongOperation %s", req.NamespacedName.String()))
-		}
-		return ctrl.Result{RequeueAfter: time.Second * 60}, nil
 	}
 
-	if st == operatorApi.LongOperationStateReady {
-		logger.Info(fmt.Sprintf("LongOperation %s is already processed, no action taken", req.NamespacedName.String()))
-		return ctrl.Result{}, nil
+	return &diffs, nil
+}
+
+func (r *LongOperationReconciler) change(obj *operatorApi.LongOperation, diffs *differences, logger logr.Logger) (statusSetter, error) {
+	return diffs.changeStatus(logger), nil
+}
+
+func (r *LongOperationReconciler) process(obj *operatorApi.LongOperation, logger logr.Logger) (statusSetter, error) {
+
+	err := r.verifySpec(obj)
+	if err != nil {
+		return nil, err
 	}
 
-	return ctrl.Result{}, nil
+	differences, err := r.compareDesiredStateWithCurrent(obj, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	if differences.None() {
+		noopSetter := func(target *operatorApi.LongOperationStatus) bool {
+			logger.Info("No changes detected - reconciliation is done.")
+			return false
+		}
+		return noopSetter, nil
+	}
+
+	return r.change(obj, differences, logger)
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -138,16 +206,57 @@ func (r *LongOperationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *LongOperationReconciler) calcProcessingTime(constantTime, randomTime int) int {
-	if randomTime == 0 {
-		return constantTime
-	}
-	res := constantTime + r.RandomGen.Intn(randomTime+1)
-	if res < 1 {
-		res = 1
+func (r *LongOperationReconciler) calcProcessingTime(uid string, constantTime, randomTimeFactor int) int {
+
+	var res big.Int
+	var divident big.Int
+	var divisor = big.NewInt(int64(randomTimeFactor))
+
+	divident.SetString(strings.Replace(uid, "-", "", 4), 16)
+	res.Mod(&divident, divisor)
+	randomTime := int(res.Int64())
+
+	sum := constantTime + randomTime
+	if sum < 1 {
+		sum = 1
 	}
 
-	return res
+	return sum
 }
 
-//t.Format("2006-01-02T15:04:05.999Z07:00")
+//differences Captures differences between desired state and the current state
+type differences struct {
+	none           bool
+	setBusyUntilTo string
+	setMessageTo   string
+	changeStatusTo operatorApi.LongOperationState
+}
+
+func (d *differences) None() bool {
+	return d.none
+}
+
+func (d *differences) changeStatus(logger logr.Logger) statusSetter {
+	return func(target *operatorApi.LongOperationStatus) bool {
+		changed := false
+
+		if d.setBusyUntilTo != "" {
+			logger.Info("Setting BusyUntil to: " + d.setBusyUntilTo)
+			target.BusyUntil = d.setBusyUntilTo
+			changed = true
+		}
+		if d.setMessageTo != "" {
+			logger.Info("Setting message to: " + d.setMessageTo)
+			target.Message = d.setMessageTo
+			changed = true
+		}
+		if string(d.changeStatusTo) != "" {
+			logger.Info("Setting state to: " + string(d.changeStatusTo))
+			target.State = d.changeStatusTo
+			changed = true
+		}
+		return changed
+	}
+}
+
+type statusSetter func(status *operatorApi.LongOperationStatus) bool
