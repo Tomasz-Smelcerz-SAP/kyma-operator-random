@@ -25,10 +25,14 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/time/rate"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/ratelimiter"
 
 	operatorApi "github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/k8s-api/api/v1alpha1"
 	"github.com/go-logr/logr"
@@ -127,7 +131,7 @@ func (r *LongOperationReconciler) compareDesiredStateWithCurrent(obj *operatorAp
 	now := time.Now()
 
 	if obj.Status.State == "" || obj.Status.BusyUntil == "" {
-		processingTime := r.calcProcessingTime(string(obj.UID), obj.Spec.ConstantProcessingTime, obj.Spec.RandomProcessingTime)
+		processingTime := calcProcessingTime(string(obj.UID), obj.Spec.ConstantProcessingTime, obj.Spec.RandomProcessingTime)
 		busyUntilTime := now.Add(time.Duration(processingTime) * time.Second)
 		diffs.setBusyUntilTo = busyUntilTime.Format(timeFormat)
 		diffs.changeStatusTo = operatorApi.LongOperationStateProcessing
@@ -160,7 +164,7 @@ func (r *LongOperationReconciler) compareDesiredStateWithCurrent(obj *operatorAp
 			}
 		} else {
 			//handle reconciliations with a change to Spec
-			processingTime := r.calcProcessingTime(string(obj.UID), obj.Spec.ConstantProcessingTime, obj.Spec.RandomProcessingTime)
+			processingTime := calcProcessingTime(string(obj.UID), obj.Spec.ConstantProcessingTime, obj.Spec.RandomProcessingTime)
 			busyUntilTime := now.Add(time.Duration(processingTime) * time.Second)
 			diffs.setBusyUntilTo = busyUntilTime.Format(timeFormat)
 			diffs.changeStatusTo = operatorApi.LongOperationStateProcessing
@@ -203,10 +207,20 @@ func (r *LongOperationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		// Uncomment the following line adding a pointer to an instance of the controlled resource as an argument
 		For(&operatorApi.LongOperation{}).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 10,
+			RateLimiter:             CustomRateLimiter(),
+		}).
 		Complete(r)
 }
 
-func (r *LongOperationReconciler) calcProcessingTime(uid string, constantTime, randomTimeFactor int) int {
+func CustomRateLimiter() ratelimiter.RateLimiter {
+	return workqueue.NewMaxOfRateLimiter(
+		workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 1000*time.Second),
+		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(30), 200)})
+}
+
+func calcProcessingTime(uid string, constantTime, randomTimeFactor int) int {
 
 	var res big.Int
 	var divident big.Int
