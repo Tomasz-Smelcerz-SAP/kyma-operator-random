@@ -3,7 +3,8 @@ module github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/operator
 go 1.17
 
 require (
-	github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/k8s-api v0.0.0-20220603094904-c6720fc620fc
+	github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/k8s-api v0.0.0-20220617070909-cab85907cf6e
+	github.com/go-logr/logr v1.2.0
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.17.0
 	go.uber.org/zap v1.19.1
@@ -26,7 +27,6 @@ require (
 	github.com/evanphx/json-patch v4.12.0+incompatible // indirect
 	github.com/form3tech-oss/jwt-go v3.2.3+incompatible // indirect
 	github.com/fsnotify/fsnotify v1.5.1 // indirect
-	github.com/go-logr/logr v1.2.0 // indirect
 	github.com/go-logr/zapr v1.2.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
