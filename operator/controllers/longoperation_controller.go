@@ -34,16 +34,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/ratelimiter"
 
-	operatorApi "github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/k8s-api/api/v1alpha1"
+	operatorAPI "github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/k8s-api/api/v1alpha1"
 	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
+type RequeueDecisionFunc func(apiObject *operatorAPI.LongOperation) (time.Duration, error)
+
 // LongOperationReconciler reconciles a LongOperation object
 type LongOperationReconciler struct {
 	client.Client
-	Scheme    *runtime.Scheme
-	RandomGen *rand.Rand
+	Scheme            *runtime.Scheme
+	RandomGen         *rand.Rand
+	RequeueDecisionFn RequeueDecisionFunc
 }
 
 const timeFormat = "2006-01-02T15:04:05.999Z07:00"
@@ -64,7 +67,7 @@ const timeFormat = "2006-01-02T15:04:05.999Z07:00"
 func (r *LongOperationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Reconciling:", "object", req.String())
-	obj := operatorApi.LongOperation{}
+	obj := operatorAPI.LongOperation{}
 	err := r.Get(ctx, client.ObjectKey{Name: req.Name, Namespace: req.Namespace}, &obj)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -78,7 +81,7 @@ func (r *LongOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	updateStatusFn, err := r.process(&obj, logger)
 	if err != nil {
-		obj.Status.State = operatorApi.LongOperationStateError
+		obj.Status.State = operatorAPI.LongOperationStateError
 		obj.Status.Message = err.Error()
 		err = r.Status().Update(ctx, &obj)
 		if err != nil {
@@ -102,18 +105,26 @@ func (r *LongOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	if obj.Status.State == operatorApi.LongOperationStateProcessing {
-		return ctrl.Result{RequeueAfter: 20 * time.Second}, nil
-	}
-	if obj.Status.State == operatorApi.LongOperationStateReady {
-		return ctrl.Result{RequeueAfter: 300 * time.Second}, nil
+	requeueDuration, err := r.requeueDuration(&obj)
+
+	if err != nil {
+		logger.Error(err, fmt.Sprintf("Error during status update of LongOperation %s", req.NamespacedName.String()))
+		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
-	return ctrl.Result{RequeueAfter: 600 * time.Second}, nil
+	return ctrl.Result{RequeueAfter: requeueDuration}, nil
 
 }
 
-func (r *LongOperationReconciler) verifySpec(obj *operatorApi.LongOperation) error {
+func (r *LongOperationReconciler) requeueDuration(apiObject *operatorAPI.LongOperation) (time.Duration, error) {
+	if r.RequeueDecisionFn != nil {
+		return r.RequeueDecisionFn(apiObject)
+	}
+
+	return defaultRequeueDecisionFunc(apiObject)
+}
+
+func (r *LongOperationReconciler) verifySpec(obj *operatorAPI.LongOperation) error {
 	constantTime := obj.Spec.ConstantProcessingTime
 	randomTime := obj.Spec.RandomProcessingTime
 
@@ -125,7 +136,7 @@ func (r *LongOperationReconciler) verifySpec(obj *operatorApi.LongOperation) err
 	return nil
 }
 
-func (r *LongOperationReconciler) compareDesiredStateWithCurrent(obj *operatorApi.LongOperation, logger logr.Logger) (*differences, error) {
+func (r *LongOperationReconciler) compareDesiredStateWithCurrent(obj *operatorAPI.LongOperation, logger logr.Logger) (*differences, error) {
 	diffs := differences{}
 
 	now := time.Now()
@@ -134,7 +145,7 @@ func (r *LongOperationReconciler) compareDesiredStateWithCurrent(obj *operatorAp
 		processingTime := calcProcessingTime(string(obj.UID), obj.Spec.ConstantProcessingTime, obj.Spec.RandomProcessingTime)
 		busyUntilTime := now.Add(time.Duration(processingTime) * time.Second)
 		diffs.setBusyUntilTo = busyUntilTime.Format(timeFormat)
-		diffs.changeStatusTo = operatorApi.LongOperationStateProcessing
+		diffs.changeStatusTo = operatorAPI.LongOperationStateProcessing
 		diffs.setMessageTo = fmt.Sprintf("Processing time: %d[s]", processingTime)
 	} else {
 		if int64(obj.Status.ObservedGeneration) == obj.Generation {
@@ -149,17 +160,17 @@ func (r *LongOperationReconciler) compareDesiredStateWithCurrent(obj *operatorAp
 
 			if now.After(busyUntilTime) {
 				//no longer busy!
-				if obj.Status.State == operatorApi.LongOperationStateReady {
+				if obj.Status.State == operatorAPI.LongOperationStateReady {
 					diffs.none = true
 				} else {
-					diffs.changeStatusTo = operatorApi.LongOperationStateReady
+					diffs.changeStatusTo = operatorAPI.LongOperationStateReady
 				}
 			} else {
 				//still busy...
-				if obj.Status.State == operatorApi.LongOperationStateProcessing {
+				if obj.Status.State == operatorAPI.LongOperationStateProcessing {
 					diffs.none = true
 				} else {
-					diffs.changeStatusTo = operatorApi.LongOperationStateProcessing
+					diffs.changeStatusTo = operatorAPI.LongOperationStateProcessing
 				}
 			}
 		} else {
@@ -167,7 +178,7 @@ func (r *LongOperationReconciler) compareDesiredStateWithCurrent(obj *operatorAp
 			processingTime := calcProcessingTime(string(obj.UID), obj.Spec.ConstantProcessingTime, obj.Spec.RandomProcessingTime)
 			busyUntilTime := now.Add(time.Duration(processingTime) * time.Second)
 			diffs.setBusyUntilTo = busyUntilTime.Format(timeFormat)
-			diffs.changeStatusTo = operatorApi.LongOperationStateProcessing
+			diffs.changeStatusTo = operatorAPI.LongOperationStateProcessing
 			diffs.setMessageTo = fmt.Sprintf("Processing time: %d[s]", processingTime)
 		}
 	}
@@ -175,11 +186,11 @@ func (r *LongOperationReconciler) compareDesiredStateWithCurrent(obj *operatorAp
 	return &diffs, nil
 }
 
-func (r *LongOperationReconciler) change(obj *operatorApi.LongOperation, diffs *differences, logger logr.Logger) (statusSetter, error) {
+func (r *LongOperationReconciler) change(obj *operatorAPI.LongOperation, diffs *differences, logger logr.Logger) (statusSetter, error) {
 	return diffs.changeStatus(logger), nil
 }
 
-func (r *LongOperationReconciler) process(obj *operatorApi.LongOperation, logger logr.Logger) (statusSetter, error) {
+func (r *LongOperationReconciler) process(obj *operatorAPI.LongOperation, logger logr.Logger) (statusSetter, error) {
 
 	err := r.verifySpec(obj)
 	if err != nil {
@@ -192,7 +203,7 @@ func (r *LongOperationReconciler) process(obj *operatorApi.LongOperation, logger
 	}
 
 	if differences.None() {
-		noopSetter := func(target *operatorApi.LongOperationStatus) bool {
+		noopSetter := func(target *operatorAPI.LongOperationStatus) bool {
 			logger.Info("No changes detected - reconciliation is done.")
 			return false
 		}
@@ -206,7 +217,7 @@ func (r *LongOperationReconciler) process(obj *operatorApi.LongOperation, logger
 func (r *LongOperationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		// Uncomment the following line adding a pointer to an instance of the controlled resource as an argument
-		For(&operatorApi.LongOperation{}).
+		For(&operatorAPI.LongOperation{}).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: 10,
 			RateLimiter:             CustomRateLimiter(),
@@ -243,7 +254,7 @@ type differences struct {
 	none           bool
 	setBusyUntilTo string
 	setMessageTo   string
-	changeStatusTo operatorApi.LongOperationState
+	changeStatusTo operatorAPI.LongOperationState
 }
 
 func (d *differences) None() bool {
@@ -251,7 +262,7 @@ func (d *differences) None() bool {
 }
 
 func (d *differences) changeStatus(logger logr.Logger) statusSetter {
-	return func(target *operatorApi.LongOperationStatus) bool {
+	return func(target *operatorAPI.LongOperationStatus) bool {
 		changed := false
 
 		if d.setBusyUntilTo != "" {
@@ -273,4 +284,17 @@ func (d *differences) changeStatus(logger logr.Logger) statusSetter {
 	}
 }
 
-type statusSetter func(status *operatorApi.LongOperationStatus) bool
+type statusSetter func(status *operatorAPI.LongOperationStatus) bool
+
+func defaultRequeueDecisionFunc(obj *operatorAPI.LongOperation) (time.Duration, error) {
+	if obj.Status.State == operatorAPI.LongOperationStateProcessing {
+		return 20 * time.Second, nil
+	}
+
+	if obj.Status.State == operatorAPI.LongOperationStateReady {
+		return 300 * time.Second, nil
+
+	}
+
+	return 600 * time.Second, nil
+}
