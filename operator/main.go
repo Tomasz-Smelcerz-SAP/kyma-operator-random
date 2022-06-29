@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"os"
+	"plugin"
 
 	"math/rand"
 	"time"
@@ -35,8 +36,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	operatorApi "github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/k8s-api/api/v1alpha1"
+	operatorAPI "github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/k8s-api/api/v1alpha1"
 	"github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/operator/controllers"
+	requeuePlugin "github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/operator/plugins/requeue"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -47,7 +49,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(operatorApi.AddToScheme(scheme))
+	utilruntime.Must(operatorAPI.AddToScheme(scheme))
 
 	//+kubebuilder:scaffold:scheme
 }
@@ -93,10 +95,36 @@ func main() {
 		os.Exit(1)
 	}
 
+	p, err := plugin.Open("/Users/i303773/Documents/development/golang/src/github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/plugins/plugins.so")
+	if err != nil {
+		panic(err)
+	}
+
+	pObj, err := p.Lookup("Plugin")
+	if err != nil {
+		panic(err)
+	}
+
+	pluginInstance, ok := pObj.(requeuePlugin.Contract)
+	if !ok {
+		panic("Cannot convert plugin to required type!")
+	}
+
+	rf := func(apiObject *operatorAPI.LongOperation) (*time.Duration, error) {
+		decision, err := pluginInstance.GetRequeueDecision(apiObject)
+
+		if err != nil {
+			return nil, err
+		}
+
+		return &decision.RequeueAfter, nil
+	}
+
 	if err = (&controllers.LongOperationReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		RandomGen: rand.New(rand.NewSource(time.Now().UnixNano())),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		RandomGen:         rand.New(rand.NewSource(time.Now().UnixNano())),
+		RequeueDecisionFn: rf,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "LongOperation")
 		os.Exit(1)

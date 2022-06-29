@@ -12,6 +12,6 @@ type RequeueDecision struct {
 	RequeueAfter time.Duration
 }
 
-type RequeuePlugin interface {
+type Contract interface {
 	GetRequeueDecision(apiObject *operatorAPI.LongOperation) (*RequeueDecision, error)
 }

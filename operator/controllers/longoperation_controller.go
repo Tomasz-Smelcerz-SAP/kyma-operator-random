@@ -39,7 +39,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-type RequeueDecisionFunc func(apiObject *operatorAPI.LongOperation) (time.Duration, error)
+type RequeueDecisionFunc func(apiObject *operatorAPI.LongOperation) (*time.Duration, error)
 
 // LongOperationReconciler reconciles a LongOperation object
 type LongOperationReconciler struct {
@@ -117,11 +117,23 @@ func (r *LongOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 }
 
 func (r *LongOperationReconciler) requeueDuration(apiObject *operatorAPI.LongOperation) (time.Duration, error) {
+	//Is custom function provided?
 	if r.RequeueDecisionFn != nil {
-		return r.RequeueDecisionFn(apiObject)
+		res, err := r.RequeueDecisionFn(apiObject)
+
+		if err != nil {
+			return 0, err
+		}
+
+		//Did the function return anything?
+		if res != nil {
+			return *res, nil
+		}
 	}
 
+	//No custom function or it returned nothing - fallback to the defaults
 	return defaultRequeueDecisionFunc(apiObject)
+
 }
 
 func (r *LongOperationReconciler) verifySpec(obj *operatorAPI.LongOperation) error {
