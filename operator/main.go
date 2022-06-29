@@ -100,21 +100,25 @@ func main() {
 		panic(err)
 	}
 
-	pObj, err := p.Lookup("Plugin")
+	pObj, err := p.Lookup("Exported")
 	if err != nil {
 		panic(err)
 	}
 
-	pluginInstance, ok := pObj.(requeuePlugin.Contract)
+	contractImpl, ok := pObj.(requeuePlugin.Contract)
 	if !ok {
-		panic("Cannot convert plugin to required type!")
+		panic("Cannot convert plugin to the required type!")
 	}
 
-	rf := func(apiObject *operatorAPI.LongOperation) (*time.Duration, error) {
-		decision, err := pluginInstance.GetRequeueDecision(apiObject)
+	adapterFn := func(apiObject *operatorAPI.LongOperation) (*time.Duration, error) {
+		decision, err := contractImpl.GetRequeueDecision(apiObject)
 
 		if err != nil {
 			return nil, err
+		}
+
+		if decision == nil {
+			return nil, nil
 		}
 
 		return &decision.RequeueAfter, nil
@@ -124,7 +128,7 @@ func main() {
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		RandomGen:         rand.New(rand.NewSource(time.Now().UnixNano())),
-		RequeueDecisionFn: rf,
+		RequeueDecisionFn: adapterFn,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "LongOperation")
 		os.Exit(1)

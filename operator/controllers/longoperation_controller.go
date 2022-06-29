@@ -112,6 +112,7 @@ func (r *LongOperationReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 	}
 
+	logger.Info(fmt.Sprintf("Requeueing object %s in %d seconds...", req.NamespacedName.String(), requeueDuration/time.Second))
 	return ctrl.Result{RequeueAfter: requeueDuration}, nil
 
 }

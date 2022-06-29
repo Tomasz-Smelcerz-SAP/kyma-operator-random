@@ -68,6 +68,8 @@ github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/operator v0.0.0-202206281224
 github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/operator v0.0.0-20220628122431-3066515d57be/go.mod h1:VAstUvCfKyUt3YNoaFuoF9bOnvqVZkYe83WYe57TO1A=
 github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/operator v0.0.0-20220629082956-8596bf1f5747 h1:/O3Gk/cmiFc5+bCII+a4QTxc+9vaBspIhH8krX9KsDk=
 github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/operator v0.0.0-20220629082956-8596bf1f5747/go.mod h1:VAstUvCfKyUt3YNoaFuoF9bOnvqVZkYe83WYe57TO1A=
+github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/operator v0.0.0-20220629083327-9d1d2b3e5cc9 h1:kyFMK+x8st/0mtMdX01zUCSGXyMW0Xt2EZpS7wHiCoc=
+github.com/Tomasz-Smelcerz-SAP/kyma-operator-random/operator v0.0.0-20220629083327-9d1d2b3e5cc9/go.mod h1:GeZn0DBzy5b4PBF/hjeBjdZGIobV+pBjNp0IGHY6Yuw=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
 github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
 github.com/alecthomas/units v0.0.0-20151022065526-2efee857e7cf/go.mod h1:ybxpYRFXyAe+OPACYpWeL0wqObRcbAqCMya13uyzqw0=
